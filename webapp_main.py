@@ -29,7 +29,7 @@ from langchain_community.callbacks import get_openai_callback
 # NCP_SMS_SVC_ID = os.getenv("NCP_SMS_SVC_ID")
 # NCP_SMS_SENDER = os.getenv("NCP_SMS_SENDER")
 
-OPENAI_API_KEY = st.secrets["OpenAI_key"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 NCP_ACCESS_KEY = st.secrets["NCP_ACCESS_KEY"]
 NCP_SECRET_KEY = st.secrets["NCP_SECRET_KEY"]
 NCP_SMS_SVC_ID = st.secrets["NCP_SMS_SVC_ID"]
