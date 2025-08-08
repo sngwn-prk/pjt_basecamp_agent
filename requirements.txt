@@ -1,3 +1,4 @@
+git+https://github.com/googleapis/google-auth-library-python-httplib2
 streamlit
 pandas
 gspread
@@ -12,3 +13,4 @@ langchain-core
 python-dotenv
 requests
 Pillow
+
