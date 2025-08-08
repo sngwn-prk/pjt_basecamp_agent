@@ -6,7 +6,6 @@ gspread
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
-streamlit-gsheets
 streamlit-option-menu
 langchain-openai
 langchain-community
@@ -14,3 +13,4 @@ langchain-core
 python-dotenv
 requests
 Pillow
+
