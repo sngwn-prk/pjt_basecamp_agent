@@ -45,17 +45,17 @@ llm_o3 = ChatOpenAI(
     max_retries=2,
 )
 
-# Streamlit 환영 메시지 비활성화
-os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
-os.environ["STREAMLIT_BROWSER_GATHER_USAGE_STATS"] = "false"
+# # Streamlit 환영 메시지 비활성화
+# os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
+# os.environ["STREAMLIT_BROWSER_GATHER_USAGE_STATS"] = "false"
 
 WEBAPP_NAME = "BASECAMP Agent"
 
-# 환경 변수를 확인하여 무한 실행 방지
-if "RUNNING_STREAMLIT" not in os.environ:
-    os.environ["RUNNING_STREAMLIT"] = "1"
-    subprocess.Popen([sys.executable, "-m", "streamlit", "run", sys.argv[0]], close_fds=True)
-    sys.exit(0)
+# # 환경 변수를 확인하여 무한 실행 방지
+# if "RUNNING_STREAMLIT" not in os.environ:
+#     os.environ["RUNNING_STREAMLIT"] = "1"
+#     subprocess.Popen([sys.executable, "-m", "streamlit", "run", sys.argv[0]], close_fds=True)
+#     sys.exit(0)
 
 def make_signature(timestamp):
     secret_key = bytes(NCP_SECRET_KEY, "UTF-8")
