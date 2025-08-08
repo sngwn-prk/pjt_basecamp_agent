@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import pandas as pd
 import time
-import os
+# import os
 import random
 import string
 import base64
@@ -21,13 +21,19 @@ from langchain.output_parsers import ResponseSchema, StructuredOutputParser, Out
 from langchain_core.messages import HumanMessage
 from langchain_community.callbacks import get_openai_callback
 
-from dotenv import load_dotenv
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-NCP_ACCESS_KEY = os.getenv("NCP_ACCESS_KEY")
-NCP_SECRET_KEY = os.getenv("NCP_SECRET_KEY")
-NCP_SMS_SVC_ID = os.getenv("NCP_SMS_SVC_ID")
-NCP_SMS_SENDER = os.getenv("NCP_SMS_SENDER")
+# from dotenv import load_dotenv
+# load_dotenv()
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# NCP_ACCESS_KEY = os.getenv("NCP_ACCESS_KEY")
+# NCP_SECRET_KEY = os.getenv("NCP_SECRET_KEY")
+# NCP_SMS_SVC_ID = os.getenv("NCP_SMS_SVC_ID")
+# NCP_SMS_SENDER = os.getenv("NCP_SMS_SENDER")
+
+OPENAI_API_KEY = st.secrets["OpenAI_key"]
+NCP_ACCESS_KEY = st.secrets["NCP_ACCESS_KEY"]
+NCP_SECRET_KEY = st.secrets["NCP_SECRET_KEY"]
+NCP_SMS_SVC_ID = st.secrets["NCP_SMS_SVC_ID"]
+NCP_SMS_SENDER = st.secrets["NCP_SMS_SENDER"]
 
 llm_4o_mini = ChatOpenAI(
     openai_api_key=OPENAI_API_KEY,
