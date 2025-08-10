@@ -26,10 +26,6 @@ from utils.util_sms_sender import send_sms, generate_verification_code
 # from dotenv import load_dotenv
 # load_dotenv()
 # OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-# NCP_ACCESS_KEY = os.getenv("NCP_ACCESS_KEY")
-# NCP_SECRET_KEY = os.getenv("NCP_SECRET_KEY")
-# NCP_SMS_SVC_ID = os.getenv("NCP_SMS_SVC_ID")
-# NCP_SMS_SENDER = os.getenv("NCP_SMS_SENDER")
 
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
