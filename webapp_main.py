@@ -196,7 +196,24 @@ def page_main():
     
     if selected_menu == "Science Agent":
         render_quiz_agent()
+
+    elif selected_menu == "Release Notes":
+        st.title("Release Notes")
+        st.write("최신 업데이트 내용과 변경사항을 확인할 수 있습니다.")
         
+        try:
+            # ReleaseNote.md 파일 읽기
+            with open("ReleaseNote.md", "r", encoding="utf-8") as f:
+                release_notes_content = f.read()
+            
+            # 마크다운 내용을 st.markdown으로 표시
+            st.markdown(release_notes_content)
+            
+        except FileNotFoundError:
+            st.error("ReleaseNote.md 파일을 찾을 수 없습니다.")
+        except Exception as e:
+            st.error(f"파일을 읽는 중 오류가 발생했습니다: {str(e)}")
+    
     elif selected_menu == "Access Control":
         if admin_mode:
             st.title("Access Control")
