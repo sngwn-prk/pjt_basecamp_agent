@@ -201,7 +201,7 @@ def page_main():
             with open("README.md", "r", encoding="utf-8") as f:
                 about_content = f.read()
             st.markdown(about_content)
-            st.markdown(DEVELOPER_EMAIL)
+            st.markdown(f"- Email: {DEVELOPER_EMAIL}")
         except FileNotFoundError:
             st.error("README.md 파일을 찾을 수 없습니다.")
         except Exception as e:
