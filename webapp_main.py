@@ -25,6 +25,7 @@ from utils.util_gsheet_editer import get_sheet_df, update_sheet_data_partial, is
 # OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+DEVELOPER_EMAIL = st.secrets["DEVELOPER_EMAIL"]
 
 llm_4o_mini = ChatOpenAI(
     openai_api_key=OPENAI_API_KEY,
@@ -200,6 +201,7 @@ def page_main():
             with open("README.md", "r", encoding="utf-8") as f:
                 about_content = f.read()
             st.markdown(about_content)
+            st.markdown(DEVELOPER_EMAIL)
         except FileNotFoundError:
             st.error("README.md 파일을 찾을 수 없습니다.")
         except Exception as e:
