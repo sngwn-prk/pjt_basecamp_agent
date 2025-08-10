@@ -20,30 +20,16 @@ from langchain_community.callbacks import get_openai_callback
 from utils.util_sms_sender import send_sms, generate_verification_code
 from utils.util_gsheet_editer import get_sheet_df, update_sheet_data_partial, is_registered_user
 
+from pages.page_phone_input import page_phone_input
+from pages.page_verification import page_verification
+from utils.util_agent_science_analyzer import quiz_analyzer_science
+
 # from dotenv import load_dotenv
 # load_dotenv()
-# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+# DEVELOPER_EMAIL = os.getenv("DEVELOPER_EMAIL")
 DEVELOPER_EMAIL = st.secrets["DEVELOPER_EMAIL"]
 
-llm_4o_mini = ChatOpenAI(
-    openai_api_key=OPENAI_API_KEY,
-    model_name="gpt-4o-mini",
-    max_tokens=4096,
-    temperature=0,
-    max_retries=2,
-)
-
-llm_o3 = ChatOpenAI(
-    openai_api_key=OPENAI_API_KEY,
-    model_name="o3",
-    max_tokens=4096,
-    timeout=None,
-    max_retries=2,
-)
-
-# # Streamlit 환영 메시지 비활성화
+# # Streamlit 메시지 비활성화
 # os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
 # os.environ["STREAMLIT_BROWSER_GATHER_USAGE_STATS"] = "false"
 
@@ -54,67 +40,6 @@ WEBAPP_NAME = "BASECAMP Agent"
 #     os.environ["RUNNING_STREAMLIT"] = "1"
 #     subprocess.Popen([sys.executable, "-m", "streamlit", "run", sys.argv[0]], close_fds=True)
 #     sys.exit(0)
-
-def quiz_analyzer_science(img_input_base64):
-    response_schemas = [
-        ResponseSchema(
-            name="answer", 
-            description="The answer for the given problem"
-        ),
-        ResponseSchema(
-            name="description", 
-            description="The solution process for the given problem"),
-        ResponseSchema(
-            name="keywords", 
-            description="The keywords of scientific concepts that you need to know to solve the given problem. If there are two or more keywords for the problem, separate them with commas (,) and output a maximum of three."
-        )
-    ]
-    parser = StructuredOutputParser.from_response_schemas(response_schemas)
-    output_parser = OutputFixingParser.from_llm(parser=parser, llm=llm_4o_mini)
-    format_instructions = output_parser.get_format_instructions()
-
-    message = HumanMessage(
-        content=[
-            {
-                "type": "text",
-                "text": f"""
-                # Role
-                Your role is to output the answer(answer), the solution process (description), and the keywords needed to solve a given South Korean high school-level science problem (Image).
-                - Answer: Provide the correct answer to the problem.
-                - Description: Offer a detailed explanation of the solution process.
-                - Keywords: List important terms or concepts necessary for solving the problem.
-
-                # Instructions
-                1. Answer according to the given output format (# OutputFormat). 
-                If the problem cannot be solved, output 'None' for answer, description, and keywords.
-                2. Only consider the environment defined within the problem itself.
-                Do not assume facts or logic that go beyond what is provided.
-                3. The solution process must be explained in detail at a level understandable to high school students.
-                4. The answer must be given in Korean.
-                5. For multiple-choice questions, do not alter the order or content of the answer choices; output the choice numbers and contents exactly as shown in the problem. 
-                For short-answer questions, output the exact answer.
-                
-                # OutputFormat: {format_instructions}
-                """
-            },
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img_input_base64}"
-                }
-            }
-        ]
-    )
-    chain = llm_o3 | output_parser
-
-    try:
-        with get_openai_callback() as cb:
-            response = chain.invoke([message])
-        usage_tokens = cb.total_tokens
-        return usage_tokens, response
-    except Exception as e:
-        print(f"Error: {e}")
-        return None, None
 
 def page_main():
     """메인 페이지"""
@@ -369,178 +294,6 @@ def page_main():
         else:
             st.error("❌ 관리자 권한이 필요합니다.")
             st.info("관리자 모드로 로그인해주세요.")
-
-def page_phone_input():
-    """핸드폰 번호 입력 페이지"""
-    # 페이지 설정
-    st.set_page_config(
-        page_title=WEBAPP_NAME,
-        page_icon="🏕️",
-        layout="centered",
-        initial_sidebar_state="collapsed"
-    )
-
-    # 헤더
-    st.title("🏕️ BASECAMP Agent")
-    st.subheader("📱 휴대폰 번호")
-    
-    # 관리자 모드 토글 버튼 - 우측 상단에 배치
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.write("")  # 빈 공간으로 정렬
-    with col2:
-        admin_mode = st.toggle(
-            "Admin",
-            value=st.session_state.get("admin_mode", False),
-            help="관리자 모드로 로그인하려면 토글을 활성화하세요."
-        )
-        st.session_state.admin_mode = admin_mode
-    
-    # 메인 컨테이너
-    with st.container():
-        phone_number = st.text_input(
-            "숫자만 입력하세요. ('-' 제외)",
-            value=st.session_state.get("phone_number", ""),
-            placeholder="01012345678",
-            help="하이픈(-) 없이 숫자만 입력하세요. 관리자를 통해 사전에 등록된 사용자만 접근 가능합니다."
-        )
-        phone_number = phone_number.replace('-', '').replace(' ', '')
-        
-        # 인증번호 발송 버튼
-        if st.button("인증번호 발송", use_container_width=True):
-            if admin_mode:
-                user_status = is_registered_user(phone_number, 'admin')
-            else:
-                user_status = is_registered_user(phone_number, 'normal')
-
-            if user_status == 'active':
-                # 인증번호 생성 및 발송
-                cert_code = generate_verification_code()
-                st.session_state.sent_code = cert_code
-                st.session_state.code_sent_time = time.time()
-                st.session_state.phone_number = phone_number
-                st.session_state.admin_mode = admin_mode  # 토글 상태에 따라 설정
-                
-                # SMS 발송
-                try:
-                    result = send_sms(phone_number, cert_code)
-                    if result.get('statusCode') == '202':
-                        st.session_state.step = "verification"
-                        time.sleep(0.1)
-                        st.rerun()
-                    else:
-                        st.error("❌ SMS 발송에 실패했습니다.")
-                except Exception as e:
-                    st.warning(f"⚠️ SMS 발송 중 오류 발생. 관리자에게 문의하세요. (오류 내용: {e})")
-            elif user_status == 'waiting':
-                st.error("❌ 관리자가 권한 요청을 검토 중입니다.")
-            else:
-                st.error("❌ 등록되지 않은 번호입니다. 아래 링크를 통해 권한을 요청하세요.")
-    
-    # 하단 정보
-    st.divider()
-    st.caption("처음 방문하신가요? 관리자에게 권한을 요청하세요. (→ [권한 요청](https://docs.google.com/forms/d/e/1FAIpQLSeQcWnJ9zs_1GiEfoc5aSti28C1s_KpUvWz6r68leTWYGWJ5g/viewform?usp=sharing&ouid=115246951916721958693))")
-    st.caption("© 2025 BASECAMP Agent. All rights reserved.")
-
-def page_verification():
-    """인증번호 입력 페이지"""
-    # 페이지 설정
-    st.set_page_config(
-        page_title=WEBAPP_NAME,
-        page_icon="🏕️",
-        layout="centered",
-        initial_sidebar_state="collapsed"
-    )
-
-    # 헤더
-    st.title("🏕️ BASECAMP Agent")
-    st.subheader("🔐 인증번호")
-
-    # 메시지 표시를 위한 세션 상태 초기화
-    if "verification_message" not in st.session_state:
-        st.session_state.verification_message = {"type": None, "text": ""}
-    
-    # 메인 컨테이너
-    with st.container():
-        verification_code = st.text_input(
-            "입력하신 휴대폰 번호로 발송된 인증번호를 입력해주세요. (유효시간 30초)",
-            value=st.session_state.get("verification_code", ""),
-            type="password"
-        )
-        
-        # 로그인 버튼 (상단)
-        if st.button("로그인", use_container_width=True):
-            elapsed_time = time.time() - st.session_state.code_sent_time
-            if elapsed_time <= 30:  # 30초 이내                        
-                if verification_code == st.session_state.sent_code:
-                    st.session_state.verification_code = verification_code
-                    st.session_state.logged_in = True # 메인 페이지로 이동
-                    time.sleep(0.1)
-                    st.rerun()
-                else:
-                    st.session_state.verification_message = {"type": "error", "text": "❌ 인증번호가 일치하지 않습니다."}
-                    time.sleep(0.1)
-                    st.rerun()
-            else:
-                st.session_state.verification_message = {"type": "error", "text": "❌ 인증번호 유효시간이 만료되었습니다. 인증번호를 재발송해주세요."}
-                time.sleep(0.1)
-                st.rerun()
-        
-        # 재발송 버튼 (로그인 아래)
-        if st.button("재발송", use_container_width=True):
-            phone_number = st.session_state.get("phone_number", "")
-            if phone_number:
-                # 새로운 인증번호 생성 및 발송
-                cert_code = generate_verification_code()
-                st.session_state.sent_code = cert_code
-                st.session_state.code_sent_time = time.time()
-                st.session_state.verification_code = ""  # 입력값 초기화
-                
-                # SMS 발송
-                try:
-                    result = send_sms(phone_number, cert_code)
-                    if result.get('statusCode') == '202':
-                        st.session_state.verification_message = {"type": "success", "text": "✅ 인증번호가 재발송되었습니다."}
-                        time.sleep(0.1)
-                        st.rerun()
-                    else:
-                        st.session_state.verification_message = {"type": "error", "text": "❌ SMS 발송에 실패했습니다."}
-                        time.sleep(0.1)
-                        st.rerun()
-                except Exception as e:
-                    st.session_state.verification_message = {"type": "warning", "text": f"⚠️ SMS 발송 중 오류 발생. 관리자에게 문의하세요. (오류 내용: {e})"}
-                    time.sleep(0.1)
-                    st.rerun()
-        
-        # 이전 페이지 버튼 (재발송 아래)
-        if st.button("이전 페이지", use_container_width=True):
-            st.session_state.step = "phone_input"
-            st.session_state.phone_number = ""
-            st.session_state.verification_code = ""
-            st.session_state.sent_code = ""
-            st.session_state.code_sent_time = None
-            st.session_state.verification_message = {"type": None, "text": ""}
-            st.session_state.admin_mode = False  # 관리자 모드도 초기화
-            time.sleep(0.1)
-            st.rerun()
-        
-        # 최하단 메시지 표시 영역 (이전 페이지 버튼 아래)
-        if st.session_state.verification_message["type"]:
-            message_type = st.session_state.verification_message["type"]
-            message_text = st.session_state.verification_message["text"]
-            
-            if message_type == "success":
-                st.success(message_text)
-            elif message_type == "error":
-                st.error(message_text)
-            elif message_type == "warning":
-                st.warning(message_text)
-            elif message_type == "info":
-                st.info(message_text)
-    
-    # 하단 정보
-    st.divider()
-    st.caption("© 2025 BASECAMP Agent. All rights reserved.")
 
 def render_quiz_agent():
     """Science Agent 페이지 렌더링"""
