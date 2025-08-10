@@ -5,12 +5,19 @@ import time
 import random
 import string
 import requests
-import os
+# import os
 
-NCP_ACCESS_KEY = os.getenv("NCP_ACCESS_KEY")
-NCP_SECRET_KEY = os.getenv("NCP_SECRET_KEY")
-NCP_SMS_SVC_ID = os.getenv("NCP_SMS_SVC_ID")
-NCP_SMS_SENDER = os.getenv("NCP_SMS_SENDER")
+# from dotenv import load_dotenv
+# load_dotenv()
+# NCP_ACCESS_KEY = os.getenv("NCP_ACCESS_KEY")
+# NCP_SECRET_KEY = os.getenv("NCP_SECRET_KEY")
+# NCP_SMS_SVC_ID = os.getenv("NCP_SMS_SVC_ID")
+# NCP_SMS_SENDER = os.getenv("NCP_SMS_SENDER")
+
+NCP_ACCESS_KEY = st.secrets["NCP_ACCESS_KEY"]
+NCP_SECRET_KEY = st.secrets["NCP_SECRET_KEY"]
+NCP_SMS_SVC_ID = st.secrets["NCP_SMS_SVC_ID"]
+NCP_SMS_SENDER = st.secrets["NCP_SMS_SENDER"]
 
 def make_signature(timestamp):
     secret_key = bytes(NCP_SECRET_KEY, "UTF-8")
