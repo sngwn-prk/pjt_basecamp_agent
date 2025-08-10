@@ -145,11 +145,11 @@ def page_main():
         
         # 메뉴 구성 - 관리자 모드에 따라 다르게 표시
         if admin_mode:
-            menu_options = ["About", "Release Notes", "Science Agent", "Access Control"]
-            menu_icons = ["bi bi-house", "bi bi-sticky", "bi bi-chat", "bi bi-key"]
+            menu_options = ["About", "Release Notes", "---", "Science Agent", "Access Control"]
+            menu_icons = ["bi bi-house", "bi bi-sticky", None, "bi bi-chat", "bi bi-key"]
         else:
-            menu_options = ["About", "Release Notes", "Science Agent"]
-            menu_icons = ["bi bi-house", "bi bi-sticky", "bi bi-chat"]
+            menu_options = ["About", "Release Notes", "---", "Science Agent"]
+            menu_icons = ["bi bi-house", "bi bi-sticky", None, "bi bi-chat"]
 
         # 현재 선택된 메뉴를 세션 상태로 관리
         if "selected_menu" not in st.session_state:
