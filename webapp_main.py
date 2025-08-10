@@ -221,7 +221,7 @@ def page_main():
 
                 if not df.empty:
                     df_display = df.copy()
-                    df_display['phn_no'] = df_display['phn_no'].apply(format_phone_number)
+                    # df_display['phn_no'] = df_display['phn_no'].apply(format_phone_number)
                     
                     # 컬럼 이름을 한글로 변경 (표시용)
                     column_mapping = {
