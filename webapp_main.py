@@ -18,7 +18,7 @@ from langchain_core.messages import HumanMessage
 from langchain_community.callbacks import get_openai_callback
 
 from utils.util_sms_sender import send_sms, generate_verification_code
-from utils.util_gsheet_editer import get_sheet_df, update_sheet_data_partial, is_registered_user
+from utils.utils_gsheet import read_sheet_by_df, update_sheet_data_partial, is_registered_user
 
 from pages.page_phone_input import page_phone_input
 from pages.page_verification import page_verification
@@ -163,7 +163,7 @@ def page_main():
             try:
                 # 세션 상태에 데이터가 없거나 Admin 메뉴에 처음 접근한 경우에만 데이터를 불러옴
                 if "admin_df" not in st.session_state or "admin_last_load" not in st.session_state:
-                    st.session_state.admin_df = get_sheet_df("tbl_mbr_req_incr")
+                    st.session_state.admin_df = read_sheet_by_df("tbl_mbr_req_incr")
                     st.session_state.admin_last_load = time.time()
                 
                 df = st.session_state.admin_df
