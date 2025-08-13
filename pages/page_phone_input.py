@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 from utils.util_sms_sender import send_sms, generate_verification_code
-from utils.util_gsheet_editer import is_registered_user
+from utils.utils_gsheet import is_registered_user
 
 WEBAPP_NAME = "BASECAMP Agent"
 
