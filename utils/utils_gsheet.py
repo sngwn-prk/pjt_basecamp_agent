@@ -17,11 +17,12 @@ def format_phone_number(phone):
     except:
         return str(phone)
 
-def get_sheet_df(sheet_name):
+def read_sheet_by_df(sheet_name):
     """구글 시트의 데이터를 읽어옵니다."""
     conn = st.connection(sheet_name, type=GSheetsConnection, ttl=0)
     df = conn.read(worksheet=sheet_name, ttl=0)
-    df['phn_no'] = df['phn_no'].apply(format_phone_number)
+    if 'phn_no' in df.columns:
+        df['phn_no'] = df['phn_no'].apply(format_phone_number)
     return df
 
 def is_registered_user(phone_number, access_type):
@@ -29,7 +30,7 @@ def is_registered_user(phone_number, access_type):
     try:
         clean_phone = phone_number.replace('-', '').replace(' ', '')
 
-        df = get_sheet_df("tbl_mbr_req_incr")        
+        df = read_sheet_by_df("tbl_mbr_req_incr")        
         df['phn_no'] = df['phn_no'].apply(format_phone_number)
 
         if access_type == 'admin':
