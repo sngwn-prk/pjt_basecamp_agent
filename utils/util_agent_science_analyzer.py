@@ -8,10 +8,9 @@ from langchain_community.callbacks import get_openai_callback
 # from dotenv import load_dotenv
 # load_dotenv()
 # OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
-llm_4o_mini = ChatOpenAI(
+llm_outputfixer = ChatOpenAI(
     openai_api_key=OPENAI_API_KEY,
     model_name="gpt-4o-mini",
     max_tokens=4096,
@@ -19,15 +18,16 @@ llm_4o_mini = ChatOpenAI(
     max_retries=2,
 )
 
-llm_o3 = ChatOpenAI(
+llm_analyzer = ChatOpenAI(
     openai_api_key=OPENAI_API_KEY,
+    # model_name="gpt-5",
     model_name="o3",
     max_tokens=4096,
     timeout=None,
     max_retries=2,
 )
 
-def quiz_analyzer_science(img_input_base64):
+def quiz_analyzer_english(img_input_base64):
     response_schemas = [
         ResponseSchema(
             name="answer", 
@@ -38,11 +38,71 @@ def quiz_analyzer_science(img_input_base64):
             description="The solution process for the given problem"),
         ResponseSchema(
             name="keywords", 
+            description="The keywords about English grammar essential for problem-solving. If there are two or more keywords for the problem, separate them with commas (,) and output a maximum of three."
+        )
+    ]
+    parser = StructuredOutputParser.from_response_schemas(response_schemas)
+    output_parser = OutputFixingParser.from_llm(parser=parser, llm=llm_outputfixer)
+    format_instructions = output_parser.get_format_instructions()
+
+    message = HumanMessage(
+        content=[
+            {
+                "type": "text",
+                "text": f"""
+                # Role
+                Your role is to output the answer(answer), the solution process (description), and the keywords needed to solve a given South Korean high school-level english problem (Image).
+                - Answer: Provide the correct answer to the problem.
+                - Description: Offer a detailed explanation of the solution process. When explaining each item in the example — ①, ②, ③, ④, ⑤ — apply a line break between each item.
+                - Keywords: List important English grammar essential for problem-solving
+
+                # Instructions
+                1. Answer according to the given output format (# OutputFormat). 
+                If the problem cannot be solved, output 'None' for answer, description, and keywords.
+                2. Base your answer solely on the given texts, and do not consider external factors such as environment or culture. Respond only based on facts.
+                3. The solution process must be explained in detail at a level understandable to high school students.
+                4. Keep the original English terms when describing the text and the question, but explain the overall content mainly in Korean.
+                But, When answering about related English grammar keywords, respond in Korean. 
+                5. Do not arbitrarily change the numbering of the question’s answer choices or the order of the text; use them as they are.
+                
+                # OutputFormat: {format_instructions}
+                """
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_input_base64}"
+                }
+            }
+        ]
+    )
+    chain = llm_analyzer | output_parser
+
+    try:
+        with get_openai_callback() as cb:
+            response = chain.invoke([message])
+        total_cost = cb.total_cost*1400
+        return total_cost, response
+    except Exception as e:
+        print(f"Error: {e}")
+        return None, None
+
+def quiz_analyzer_science(img_input_base64):
+    response_schemas = [
+        ResponseSchema(
+            name="answer", 
+            description="The answer for the given problem"
+        ),
+        ResponseSchema(
+            name="description", 
+            description="The solution process for the given problem."),
+        ResponseSchema(
+            name="keywords", 
             description="The keywords of scientific concepts that you need to know to solve the given problem. If there are two or more keywords for the problem, separate them with commas (,) and output a maximum of three."
         )
     ]
     parser = StructuredOutputParser.from_response_schemas(response_schemas)
-    output_parser = OutputFixingParser.from_llm(parser=parser, llm=llm_4o_mini)
+    output_parser = OutputFixingParser.from_llm(parser=parser, llm=llm_outputfixer)
     format_instructions = output_parser.get_format_instructions()
 
     message = HumanMessage(
@@ -53,7 +113,7 @@ def quiz_analyzer_science(img_input_base64):
                 # Role
                 Your role is to output the answer(answer), the solution process (description), and the keywords needed to solve a given South Korean high school-level science problem (Image).
                 - Answer: Provide the correct answer to the problem.
-                - Description: Offer a detailed explanation of the solution process.
+                - Description: Offer a detailed explanation of the solution process. When explaining each item in the example — ㄱ, ㄴ, ㄷ — apply a line break between each item.
                 - Keywords: List important terms or concepts necessary for solving the problem.
 
                 # Instructions
@@ -77,13 +137,13 @@ def quiz_analyzer_science(img_input_base64):
             }
         ]
     )
-    chain = llm_o3 | output_parser
+    chain = llm_analyzer | output_parser
 
     try:
         with get_openai_callback() as cb:
             response = chain.invoke([message])
-        usage_tokens = cb.total_tokens
-        return usage_tokens, response
+        total_cost = cb.total_cost * 1400
+        return total_cost, response
     except Exception as e:
         print(f"Error: {e}")
         return None, None
