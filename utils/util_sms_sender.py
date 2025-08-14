@@ -7,7 +7,9 @@ import time
 import random
 import string
 import requests
+
 import streamlit as st
+from utils.utils_gsheet import update_sheet_add_row
 
 # from dotenv import load_dotenv
 # load_dotenv()
@@ -28,7 +30,7 @@ def make_signature(timestamp):
     message = bytes(message, "UTF-8")
     return base64.b64encode(hmac.new(secret_key, message, digestmod=hashlib.sha256).digest()) 
 
-def send_sms(phone_number, cert_code):
+def send_sms(date_partition, create_dt, phone_number, sms_type, sms_body):
     timestamp = str(int(time.time() * 1000))
     signature = make_signature(timestamp)
     headers = {
@@ -42,17 +44,24 @@ def send_sms(phone_number, cert_code):
         "contentType":"COMM",
         "countryCode":'82',
         "from":NCP_SMS_SENDER,
-        "content": "[BASECAMP Agent] 인증번호",
+        "content": sms_type,
         "messages":[
             {
                 "to": phone_number,
-                "content": f"[BASECAMP Agent]\n인증번호: {cert_code}\n타인 유출로 인한 피해 주의"
+                "content": sms_body
             }
         ]
     }
     SMS_URL = f'https://sens.apigw.ntruss.com/sms/v2/services/{NCP_SMS_SVC_ID}/messages'
     response = requests.post(SMS_URL, headers=headers, json=body)
-    return response.json()
+    result = response.json()
+    if result.get('statusCode') == '202':
+        try:
+            update_sheet_add_row("tbl_sms_log_incr", [date_partition, create_dt, phone_number, sms_type])
+        except Exception as e:
+            st.warning(f"⚠️ 문자 발송 내역 기록 중 오류 발생: {e}")
+
+    return result
 
 def generate_verification_code():
     """6자리 인증번호 생성"""
