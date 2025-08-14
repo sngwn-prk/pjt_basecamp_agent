@@ -23,6 +23,8 @@ def read_sheet_by_df(sheet_name):
     df = conn.read(worksheet=sheet_name, ttl=0)
     if 'phn_no' in df.columns:
         df['phn_no'] = df['phn_no'].apply(format_phone_number)
+    if 'author' in df.columns:
+        df['author'] = df['author'].apply(format_phone_number)
     return df
 
 def is_registered_user(phone_number, access_type):
@@ -53,44 +55,49 @@ def is_registered_user(phone_number, access_type):
     except Exception as e:
         return 'not_found'
 
-def update_sheet_data_partial(sheet_name, original_df, updated_df):
+def get_worksheet(sheet_name):
+    connection_info = st.secrets["connections"][sheet_name]
+    service_account_info = {
+        "type": connection_info["type"],
+        "project_id": connection_info["project_id"],
+        "private_key_id": connection_info["private_key_id"],
+        "private_key": connection_info["private_key"],
+        "client_email": connection_info["client_email"],
+        "client_id": connection_info["client_id"],
+        "auth_uri": connection_info["auth_uri"],
+        "token_uri": connection_info["token_uri"],
+        "auth_provider_x509_cert_url": connection_info["auth_provider_x509_cert_url"],
+        "client_x509_cert_url": connection_info["client_x509_cert_url"]
+    }
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials = Credentials.from_service_account_info(
+        service_account_info, 
+        scopes=scope
+    )
+    gc = gspread.authorize(credentials)
+
+    spreadsheet_url = connection_info["spreadsheet"]
+    spreadsheet = gc.open_by_url(spreadsheet_url)
+    worksheet = spreadsheet.worksheet(sheet_name)
+    return worksheet
+
+def update_sheet_add_row(sheet_name, new_row:list):
+    """구글 시트에 새로운 행을 추가합니다."""
+    try:
+        worksheet = get_worksheet(sheet_name)
+        worksheet.append_row(new_row)
+        return True
+    except Exception as e:
+        st.error(f"❌ 행 추가 중 오류: {e}")
+        return False
+
+def update_sheet_specific_rows(sheet_name, original_df, updated_df):
     """구글 시트의 변경된 행만 업데이트합니다."""
     try:
-        # import gspread
-        # from google.oauth2.service_account import Credentials
-        
-        # secrets.toml에서 서비스 계정 정보 가져오기
-        connection_info = st.secrets["connections"][sheet_name]
-        service_account_info = {
-            "type": connection_info["type"],
-            "project_id": connection_info["project_id"],
-            "private_key_id": connection_info["private_key_id"],
-            "private_key": connection_info["private_key"],
-            "client_email": connection_info["client_email"],
-            "client_id": connection_info["client_id"],
-            "auth_uri": connection_info["auth_uri"],
-            "token_uri": connection_info["token_uri"],
-            "auth_provider_x509_cert_url": connection_info["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": connection_info["client_x509_cert_url"]
-        }
-        
-        # 서비스 계정 인증
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        
-        credentials = Credentials.from_service_account_info(
-            service_account_info, 
-            scopes=scope
-        )
-        
-        gc = gspread.authorize(credentials)
-        
-        # 스프레드시트 열기
-        spreadsheet_url = connection_info["spreadsheet"]
-        spreadsheet = gc.open_by_url(spreadsheet_url)
-        worksheet = spreadsheet.worksheet(sheet_name)
+        worksheet = get_worksheet(sheet_name)
         
         # 변경된 행 찾기
         changed_rows = []
