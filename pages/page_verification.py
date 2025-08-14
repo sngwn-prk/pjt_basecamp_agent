@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 from utils.util_sms_sender import send_sms, generate_verification_code
+from utils.utils_gsheet import update_sheet_add_row
 
 WEBAPP_NAME = "BASECAMP Agent"
 
@@ -9,14 +10,14 @@ def page_verification():
     # 페이지 설정
     st.set_page_config(
         page_title=WEBAPP_NAME,
-        page_icon="🏕️",
+        page_icon="📝",
         layout="centered",
         initial_sidebar_state="collapsed"
     )
 
     # 헤더
-    st.title("🏕️ BASECAMP Agent")
-    st.subheader("🔐 인증번호")
+    st.title("📝 BASECAMP Agent")
+    st.subheader("인증번호")
 
     # 메시지 표시를 위한 세션 상태 초기화
     if "verification_message" not in st.session_state:
@@ -29,12 +30,22 @@ def page_verification():
             value=st.session_state.get("verification_code", ""),
             type="password"
         )
-        
+
         # 로그인 버튼 (상단)
         if st.button("로그인", use_container_width=True):
             elapsed_time = time.time() - st.session_state.code_sent_time
             if elapsed_time <= 30:  # 30초 이내                        
                 if verification_code == st.session_state.sent_code:
+                    create_dt = time.strftime("%Y%m%d %H:%M:%S", time.localtime())
+                    date_partition = create_dt.split(" ")[0]    
+                    phn_no = st.session_state.get("phone_number", "")
+                    admin_mode = st.session_state.get("admin_mode", False)
+                    if admin_mode:
+                        admin_mode = "관리자"
+                    else:
+                        admin_mode = "일반(학생)"
+                    update_sheet_add_row("tbl_mbr_login_incr", [date_partition, create_dt, phn_no, admin_mode])
+
                     st.session_state.verification_code = verification_code
                     st.session_state.logged_in = True # 메인 페이지로 이동
                     time.sleep(0.1)
@@ -60,7 +71,11 @@ def page_verification():
                 
                 # SMS 발송
                 try:
-                    result = send_sms(phone_number, cert_code)
+                    sms_body = f"[BASECAMP Agent]\n인증번호: {cert_code}\n타인 유출로 인한 피해 주의"
+                    sms_type = "cert_code"
+                    create_dt = time.strftime("%Y%m%d %H:%M:%S", time.localtime())
+                    date_partition = create_dt.split(" ")[0]
+                    result = send_sms(date_partition, create_dt, phone_number, sms_type, sms_body)
                     if result.get('statusCode') == '202':
                         st.session_state.verification_message = {"type": "success", "text": "✅ 인증번호가 재발송되었습니다."}
                         time.sleep(0.1)
@@ -70,7 +85,7 @@ def page_verification():
                         time.sleep(0.1)
                         st.rerun()
                 except Exception as e:
-                    st.session_state.verification_message = {"type": "warning", "text": f"⚠️ SMS 발송 중 오류 발생. 관리자에게 문의하세요. (오류 내용: {e})"}
+                    st.session_state.verification_message = {"type": "warning", "text": f"⚠️ SMS 발송 중 오류 발생. 관리자에게 문의하세요. (오류 내용: {e}, {sms_type}, {sms_body})"}
                     time.sleep(0.1)
                     st.rerun()
         
