@@ -12,17 +12,11 @@ import json
 # from streamlit_gsheets import GSheetsConnection
 from streamlit_option_menu import option_menu
 
-from langchain_openai import ChatOpenAI
-from langchain.output_parsers import ResponseSchema, StructuredOutputParser, OutputFixingParser
-from langchain_core.messages import HumanMessage
-from langchain_community.callbacks import get_openai_callback
-
-from utils.util_sms_sender import send_sms, generate_verification_code
-from utils.utils_gsheet import read_sheet_by_df, update_sheet_data_partial, is_registered_user
-
 from pages.page_phone_input import page_phone_input
 from pages.page_verification import page_verification
-from utils.util_agent_science_analyzer import quiz_analyzer_science
+from utils.utils_gsheet import read_sheet_by_df, update_sheet_add_row, update_sheet_specific_rows
+from utils.util_quiz_agent import quiz_analyzer_english, quiz_analyzer_science
+from utils.util_sms_sender import send_sms
 
 # from dotenv import load_dotenv
 # load_dotenv()
@@ -41,12 +35,147 @@ WEBAPP_NAME = "BASECAMP Agent"
 #     subprocess.Popen([sys.executable, "-m", "streamlit", "run", sys.argv[0]], close_fds=True)
 #     sys.exit(0)
 
+def render_quiz_analyzer(tab_name):
+    # 2열 레이아웃 생성
+    col1, col2 = st.columns([1, 1], gap="large")
+
+    # 분석 중단 플래그를 세션 상태로 관리 (탭별로 독립적)
+    if f"analyzing_{tab_name}" not in st.session_state:
+        st.session_state[f"analyzing_{tab_name}"] = False
+    if f"analyze_stop_{tab_name}" not in st.session_state:
+        st.session_state[f"analyze_stop_{tab_name}"] = False
+    
+    # 업로드된 이미지 상태를 세션에 저장 (탭별로 독립적)
+    if f"uploaded_image_{tab_name}" not in st.session_state:
+        st.session_state[f"uploaded_image_{tab_name}"] = None
+
+    with col1:
+        st.subheader("1단계: 문제 선택")
+
+        # 이미지 업로드 방법 선택
+        upload_method = st.selectbox(
+            "이미지 입력 방법을 선택하세요.",
+            ["파일 선택", "카메라 촬영"],
+            index=0,
+            key=f"upload_method_{tab_name}"
+        )
+
+        if upload_method == "파일 선택":
+            uploaded_image = st.file_uploader(
+                "분석 대상 이미지를 업로드하세요.",
+                type=['png', 'jpg', 'jpeg'],
+                accept_multiple_files=False,
+                key=f"file_uploader_{tab_name}"
+            )
+        else:  # 카메라 촬영
+            uploaded_image = st.camera_input(
+                "분석 대상 이미지를 촬영하세요.",
+                key=f"camera_input_{tab_name}"
+            )
+        
+        # 업로드된 이미지를 세션 상태에 저장
+        if uploaded_image is not None:
+            st.session_state[f"uploaded_image_{tab_name}"] = uploaded_image
+
+        # 이미지가 업로드된 경우 처리
+        if st.session_state[f"uploaded_image_{tab_name}"] is not None:
+            st.divider()
+            st.subheader("2단계: 문제 확인 및 분석 시작")
+            st.image(st.session_state[f"uploaded_image_{tab_name}"], caption="업로드된 문제")
+
+            # 이미지를 base64로 변환
+            img_bytes = st.session_state[f"uploaded_image_{tab_name}"].getvalue()
+            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+            # 분석 중이 아닐 때: 분석 시작 버튼, 분석 중일 때: 분석 중단 버튼
+            if not st.session_state[f"analyzing_{tab_name}"]:
+                if st.button("분석 시작", type="primary", use_container_width=True, key=f"start_analyze_{tab_name}"):
+                    st.session_state[f"analyzing_{tab_name}"] = True
+                    st.session_state[f"analyze_stop_{tab_name}"] = False
+                    st.rerun()
+            else:
+                if st.button("분석 중단", type="secondary", use_container_width=True, key=f"stop_analyze_{tab_name}"):
+                    st.session_state[f"analyze_stop_{tab_name}"] = True
+                    st.session_state[f"analyzing_{tab_name}"] = False
+                    st.info("분석이 중단되었습니다.")
+                    st.rerun()
+
+            # 분석 중일 때만 분석 로직 실행
+            if st.session_state[f"analyzing_{tab_name}"] and not st.session_state[f"analyze_stop_{tab_name}"]:
+                with st.spinner("문제를 분석하고 있습니다...", show_time=True):
+                    try:
+                        if tab_name == "영어":
+                            total_cost, response = quiz_analyzer_english(img_base64)
+                        elif tab_name == "과학":
+                            total_cost, response = quiz_analyzer_science(img_base64)
+
+                        # 분석 중단 요청이 들어왔는지 확인
+                        if st.session_state[f"analyze_stop_{tab_name}"]:
+                            st.info("분석이 중단되었습니다.")
+                            st.session_state[f"analyzing_{tab_name}"] = False
+                            st.rerun()
+                        else:
+                            if total_cost:
+                                # 결과를 세션 상태에 저장 (탭별로 독립적)
+                                st.session_state[f"quiz_result_{tab_name}"] = {
+                                    'answer': response.get('answer', ''),
+                                    'description': response.get('description', ''),
+                                    'keywords': response.get('keywords', ''),
+                                    'total_cost': total_cost if total_cost is not None else 0,
+                                }
+                                st.session_state[f"analyzing_{tab_name}"] = False
+                                st.session_state[f"last_feedback_uploaded_{tab_name}"] = False
+                                st.rerun()
+                            else:
+                                st.session_state[f"analyzing_{tab_name}"] = False
+                                st.error("❌ 문제 분석 중 오류가 발생했습니다. 다시 시도해주세요.")
+                    except Exception as e:
+                        st.session_state[f"analyzing_{tab_name}"] = False
+                        st.error(f"❌ 문제 분석 중 오류가 발생했습니다: {str(e)}")
+            st.divider()
+
+    with col2:
+        st.subheader("3단계: 분석 결과 확인")
+        # 이전 분석 결과가 있는 경우 표시
+        if f"quiz_result_{tab_name}" in st.session_state and st.session_state[f"quiz_result_{tab_name}"]:
+            quiz_result = st.session_state.get(f"quiz_result_{tab_name}", "")
+            st.markdown("##### 분석 결과 예시")
+            st.markdown(":red-background[1. 정답]")
+            st.markdown(quiz_result.get('answer', ''))
+            st.divider()
+            st.markdown(":red-background[2. 해설]")
+            st.markdown(quiz_result.get('description', ''))
+            st.divider()
+            st.markdown(":red-background[3. 키워드]")
+            st.markdown(quiz_result.get('keywords', ''))
+            
+            # 사용 기록 업로드
+            create_dt = time.strftime("%Y%m%d %H:%M:%S", time.localtime())
+            date_partition = create_dt.split(" ")[0]    
+            phn_no = st.session_state.get("phone_number", "")
+            admin_mode = st.session_state.get("admin_mode", False)
+            if admin_mode:
+                access_type = "관리자"
+            else:
+                access_type = "일반(학생)"
+            subject = tab_name
+            agent_type = "quiz_analyzer"
+            total_cost = quiz_result.get('total_cost', 0)
+            update_sheet_add_row("tbl_agent_usg_incr", [date_partition, create_dt, phn_no, access_type, subject, agent_type, total_cost])
+        else:
+            st.markdown("##### 분석 결과 예시")
+            st.markdown(":red-background[1. 정답]")
+            st.divider()
+            st.markdown(":red-background[2. 해설]")
+            st.divider()
+            st.markdown(":red-background[3. 키워드]")
+
 def page_main():
     """메인 페이지"""
     # 페이지 설정
     st.set_page_config(
         page_title=WEBAPP_NAME,
-        page_icon="🏕️",
+        page_icon="📝",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -56,7 +185,7 @@ def page_main():
     
     # 사이드바 구성
     with st.sidebar:
-        st.title("🏕️ BASECAMP Agent")
+        st.title("📝 BASECAMP Agent")
         
         # 현재 계정 및 권한 상태 표시
         if admin_mode:
@@ -69,15 +198,15 @@ def page_main():
         st.divider()
         
         # 메뉴 구성 - 관리자 모드에 따라 다르게 표시
-        menu_options = ["About", "Release Notes", "---", "Science Agent"]
-        menu_icons = ["bi bi-house", "bi bi-sticky", None, "bi bi-chat"]
+        menu_options = ["About", "Release Notes", "---", "Quiz Analyzer", "---", "Dashboard"]
+        menu_icons = ["bi bi-house", "bi bi-sticky", None, "bi bi-chat", None, "bi bi-bar-chart-line"]
         if admin_mode:
-            menu_options += ["---", "Access Control"]
-            menu_icons += [None, "bi bi-key"]            
+            menu_options += ["---", "Access Control", "Admin Dashboard"]
+            menu_icons += [None, "bi bi-key", "bi bi-bar-chart-line"]
 
         # 현재 선택된 메뉴를 세션 상태로 관리
         if "selected_menu" not in st.session_state:
-            st.session_state.selected_menu = "Science Agent"
+            st.session_state.selected_menu = "Quiz Analyzer"
 
         # option_menu를 사용하여 메뉴 표시
         selected_menu = option_menu(
@@ -118,7 +247,7 @@ def page_main():
     
     # 메인 컨텐츠 영역
     selected_menu = st.session_state.selected_menu
-
+    
     if selected_menu == "About":
         st.title("About")
         try:
@@ -143,23 +272,92 @@ def page_main():
         except Exception as e:
             st.error(f"파일을 읽는 중 오류가 발생했습니다: {str(e)}")
 
-    elif selected_menu == "Science Agent":
-        render_quiz_agent()
-    
-    elif selected_menu == "Access Control":
+    elif selected_menu == "Quiz Analyzer":
+        st.title("Quiz Analyzer")
+        st.markdown(
+            """
+            - 업로드된 문제(이미지)를 AI를 통해 분석하여 문제의 정답과 해설을 제공합니다.
+            - 생성된 결과에 대한 피드백을 남겨주세요. 피드백은 향후 기능 개선에 활용됩니다.
+            - AI가 생성한 정보는 오류를 포함할 수 있기 때문에 참고용으로만 사용해주세요.
+
+            :red-background[1단계: 문제 선택]
+            - 문제는 사진 업로드 또는 사진 촬영을 통해 업로드 가능합니다. (PNG, JPG, JPEG / 0MB 이하)
+
+            :red-background[2단계: 문제 확인 및 분석 시작]
+            - 업로드한 문제를 확인할 수 있으며, 분석 시작을 통해 AI 분석을 실행합니다.
+            - 분석 중단을 누르면 분석이 중단됩니다.
+
+            :red-background[3단계: 분석 결과 확인]
+            - AI가 문제를 분석한 결과를 확인합니다.
+            - 새로운 문제를 분석하고자 할 때는 1단계로 돌아가 새로운 문제를 업로드해주세요.
+            """
+        )
+        tab1, tab2, tab3, tab4 = st.tabs(["국어", "수학", "영어", "과학"])
+        with tab1:
+            st.write("Coming soon...")
+        with tab2:
+            st.write("Coming soon...")
+        with tab3:
+            render_quiz_analyzer("영어")
+        with tab4:
+            render_quiz_analyzer("과학")
+
+    elif selected_menu == "Dashboard":
+        st.title("Dashboard")
+        st.markdown(
+            """
+            - 나의 Agent 사용 기록을 확인할 수 있습니다.
+            """
+        )
+
         if admin_mode:
-            st.title("Access Control")
-            st.write(
-                """
-                - 사용자들의 권한을 관리할 수 있는 관리자 전용 페이지입니다.
-                - "권한 상태"의 값을 아래와 같이 변경하여 사용자의 권한을 관리할 수 있습니다.
-                    1) 활성: 사용자가 권한을 획득한 상태
-                    2) 대기: 관리자가 권한 요청을 검토 중인 상태
-                    3) 비활성: 관리자가 권한 요청을 거절한 상태
-                - 그 외의 값들은 변경이 불가합니다.
-                """
-            )
-            
+            admin_mode = "관리자"
+        else:
+            admin_mode = "일반(학생)"
+        phone_number = st.session_state.get("phone_number", "")
+
+        df_log = read_sheet_by_df("tbl_agent_usg_incr")
+        df_log = df_log[(df_log['phn_no'] == phone_number) & (df_log['access_type'] == admin_mode)]
+                
+        df_name = read_sheet_by_df("tbl_mbr_req_incr")
+        df_name = df_name[(df_name['phn_no'] == phone_number) & (df_name['access_type'] == admin_mode)]
+        df_name = df_name[['phn_no', 'name']].drop_duplicates()
+        df_log = df_log.merge(df_name, on='phn_no', how='left')
+
+        if not df_log.empty:
+            # 컬럼명을 한글로 매핑 (필요시)
+            column_mapping = {
+                'date_partition': '날짜',
+                'create_dt': '날짜/시간',
+                'name': '이름',
+                'phn_no': '연락처',
+                'access_type': '권한 유형',
+                'subject': '과목',
+                'agent_type': 'Agent 유형',
+                'total_cost': '발생 비용'
+            }
+            df_log_renamed = df_log[['date_partition', 'create_dt', 'name', 'phn_no', 'access_type', 'subject', 'agent_type', 'total_cost']]
+            df_log_renamed = df_log_renamed.rename(columns=column_mapping)
+            st.dataframe(df_log_renamed, use_container_width=True)
+
+    elif selected_menu == "Access Control" and  admin_mode==True:
+        st.title("Access Control")
+        st.markdown(
+            """
+            - 사용자들의 권한을 관리할 수 있는 관리자 전용 페이지입니다.
+
+            :red-background[권한 관리]
+            - **권한 상태**의 값을 아래와 같이 변경하여 사용자의 권한을 관리할 수 있습니다. 그 외의 값들은 변경이 불가합니다.
+                1) 활성: 사용자가 권한을 획득한 상태
+                2) 대기: 관리자가 권한 요청을 검토 중인 상태
+                3) 비활성: 관리자가 권한 요청을 거절한 상태
+
+            :red-background[권한 수정 이력]
+            - 권한 관리 탭에서 변경한 권한 수정 이력을 확인할 수 있습니다. (읽기 전용)
+            """
+        )
+        tab1, tab2 = st.tabs(["권한 관리", "권한 수정 이력"])
+        with tab1:
             try:
                 # 세션 상태에 데이터가 없거나 Admin 메뉴에 처음 접근한 경우에만 데이터를 불러옴
                 if "admin_df" not in st.session_state or "admin_last_load" not in st.session_state:
@@ -170,7 +368,6 @@ def page_main():
 
                 if not df.empty:
                     df_display = df.copy()
-                    # df_display['phn_no'] = df_display['phn_no'].apply(format_phone_number)
                     
                     # 컬럼 이름을 한글로 변경 (표시용)
                     column_mapping = {
@@ -237,6 +434,9 @@ def page_main():
                                 # 원본 데이터프레임에 변경사항 적용 (req_id를 기준으로 매핑)
                                 updated_df = df.copy()
                                 
+                                # 상태 변경 추적을 위한 딕셔너리 생성
+                                status_changes = []
+                                
                                 # 편집된 데이터프레임의 각 행에 대해 원본 데이터프레임에서 해당 req_id를 찾아 업데이트
                                 for _, edited_row in edited_df.iterrows():
                                     req_id = edited_row.get('req_id')
@@ -244,13 +444,50 @@ def page_main():
                                         # 원본 데이터프레임에서 해당 req_id를 가진 행 찾기
                                         original_idx = updated_df[updated_df['req_id'] == req_id].index
                                         if len(original_idx) > 0:
+                                            # 상태 변경 추적
+                                            original_status = df.loc[df['req_id'] == req_id, 'status'].values[0]
+                                            new_status = edited_row['status']
+                                            phn_no = df.loc[df['req_id'] == req_id, 'phn_no'].values[0]
+                                            access_type = df.loc[df['req_id'] == req_id, 'access_type'].values[0]
+                                            if original_status != new_status:
+                                                status_changes.append({
+                                                    "req_id": req_id,
+                                                    "phn_no": phn_no,
+                                                    "access_type": access_type,
+                                                    "from": original_status,
+                                                    "to": new_status
+                                                })
                                             # 해당 행의 모든 컬럼 업데이트
                                             for col in edited_df.columns:
                                                 if col in updated_df.columns and col not in ['req_id', 'date_partition', 'create_dt', 'access_type', 'agr_svc_terms', 'agr_psnl_info']:
                                                     updated_df.loc[original_idx[0], col] = edited_row[col]
                                 
+                                # 문자 발송 대상 연락처 추출
+                                for change in status_changes:
+                                    if change['from'] in ['대기', '비활성'] and change['to'] == '활성':
+                                        sms_body = f"[BASECAMP Agent]\n접근 권한이 활성화되었습니다."
+                                        sms_type = "approved"
+                                    elif change['from'] == '활성' and change['to'] in ['대기', '비활성']:
+                                        sms_body = f"[BASECAMP Agent]\n접근 권한이 비활성화되었습니다."
+                                        sms_type = "rejected"
+                                    else:
+                                        continue
+
+                                    create_dt = time.strftime("%Y%m%d %H:%M:%S", time.localtime())
+                                    date_partition = create_dt.split(" ")[0]    
+                                    send_sms(date_partition, create_dt, change['phn_no'], sms_type, sms_body)
+
+                                    phn_no_author = st.session_state.get("phone_number", "")
+                                    update_sheet_add_row(
+                                        "tbl_mbr_access_chg_incr", 
+                                        [
+                                            change['req_id'], date_partition, create_dt, change['phn_no'], change['access_type'], phn_no_author, change['from'], change['to']
+                                        ]
+                                    )
+                                    time.sleep(0.1)
+                                
                                 # 변경된 행만 업데이트
-                                success, _ = update_sheet_data_partial("tbl_mbr_req_incr", df, updated_df)
+                                success, _ = update_sheet_specific_rows("tbl_mbr_req_incr", df, updated_df)
                                 if success:
                                     st.session_state.admin_message = {"type": "success", "text": f"✅ 변경사항을 성공적으로 적용하였습니다."}
                                     # 저장 후 세션 상태의 데이터도 업데이트
@@ -291,142 +528,102 @@ def page_main():
             except Exception as e:
                 st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
                 st.code(f"오류 상세: {str(e)}")
-        else:
-            st.error("❌ 관리자 권한이 필요합니다.")
-            st.info("관리자 모드로 로그인해주세요.")
+        with tab2:
+            try:
+                df_access_chg = read_sheet_by_df("tbl_mbr_access_chg_incr")
+                
+                df_name = read_sheet_by_df("tbl_mbr_req_incr")
+                df_name = df_name[['phn_no', 'name']].drop_duplicates()
+                df_access_chg = df_access_chg.merge(df_name, on='phn_no', how='left')
 
-def render_quiz_agent():
-    """Science Agent 페이지 렌더링"""
-    st.title("Science Agent")
-    st.write("과학 문제 이미지를 업로드하거나 촬영하여 답변을 받아보세요.")
-    
-    # 2열 레이아웃 생성
-    col1, col2 = st.columns([1, 1], gap="large")
-    
-    with col1:
-        st.subheader("이미지 입력")
-        
-        # 이미지 업로드 방법 선택
-        upload_method = st.radio(
-            "이미지 입력 방법을 선택하세요:",
-            ["📁 사진 업로드", "📷 카메라 촬영"],
-            horizontal=True
+                if not df_access_chg.empty:
+                    # 컬럼명을 한글로 매핑 (필요시)
+                    column_mapping = {
+                        'req_id': '요청ID',
+                        'date_partition': '날짜',
+                        'create_dt': '날짜/시간',
+                        'name': '이름',
+                        'phn_no': '연락처',
+                        'access_type': '권한 유형',
+                        'author': '관리자 연락처',
+                        'status_from': '기존 권한',
+                        'status_to': '신규 권한'
+                    }
+                    df_access_chg_renamed = df_access_chg[['req_id', 'date_partition', 'create_dt', 'name', 'phn_no', 'access_type', 'author', 'status_from', 'status_to']]
+                    df_access_chg_renamed = df_access_chg_renamed.rename(columns=column_mapping)
+                    st.dataframe(df_access_chg_renamed, use_container_width=True)
+                else:
+                    st.info("권한 변경 이력 데이터가 없습니다.")
+            except Exception as e:
+                st.error(f"권한 변경 이력 데이터를 불러오는 중 오류가 발생했습니다: {e}")
+                st.code(f"오류 상세: {str(e)}")
+
+    elif selected_menu == "Admin Dashboard" and admin_mode==True:
+        st.title("Admin Dashboard")
+        st.markdown(
+            """
+            관리자 전용 대시보드입니다.
+
+            :red-background[로그인 이력]
+            - 사용자들의 로그인 이력을 확인할 수 있습니다. (읽기 전용)
+
+            :red-background[Agent 사용 이력]
+            - 사용자들의 Agent 사용 이력을 확인할 수 있습니다. (읽기 전용)
+            """
         )
-        
-        uploaded_image = None
-        
-        if upload_method == "📁 사진 업로드":
-            uploaded_image = st.file_uploader(
-                "과학 문제 이미지를 업로드하세요",
-                type=['png', 'jpg', 'jpeg'],
-                help="PNG, JPG, JPEG 형식의 이미지를 업로드할 수 있습니다."
-            )
-        else:  # 카메라 촬영
-            uploaded_image = st.camera_input(
-                "과학 문제를 촬영하세요",
-                help="카메라로 과학 문제를 촬영하여 업로드할 수 있습니다."
-            )
-        
-        # 이미지가 업로드된 경우 처리
-        if uploaded_image is not None:
-            # 이미지 표시 (폭 300으로 설정)
-            st.subheader("업로드된 이미지")
-            st.image(uploaded_image, caption="업로드된 과학 문제", width=300)
-            
-            # 이미지를 base64로 변환
-            img_bytes = uploaded_image.getvalue()
-            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-            
-            # 분석 버튼
-            if st.button("문제 분석하기", type="primary", use_container_width=True):
-                with st.spinner("문제를 분석하고 있습니다..."):
-                    try:
-                        # quiz_analyzer_science 함수 호출
-                        usage_tokens, response = quiz_analyzer_science(img_base64)
-                        
-                        if response and usage_tokens:
-                            # 결과를 세션 상태에 저장
-                            st.session_state.quiz_result = {
-                                'answer': response.get('answer', ''),
-                                'description': response.get('description', ''),
-                                'keywords': response.get('keywords', ''),
-                                'usage_tokens': usage_tokens
-                            }
-                            st.rerun()
-                        else:
-                            st.error("❌ 문제 분석 중 오류가 발생했습니다. 다시 시도해주세요.")
-                            
-                    except Exception as e:
-                        st.error(f"❌ 문제 분석 중 오류가 발생했습니다: {str(e)}")
-    
-    with col2:
-        st.subheader("AI 분석 결과")
-        
-        # 이전 분석 결과가 있는 경우 표시
-        if "quiz_result" in st.session_state and st.session_state.quiz_result:
-            display_quiz_result(st.session_state.quiz_result)
-        else:
-            st.info("👈 왼쪽에서 이미지를 업로드하고 분석 버튼을 클릭하세요.")
-            st.markdown("---")
-            st.markdown("### 분석 결과 예시")
-            st.markdown("""
-            **🎯 정답**: 문제의 정답이 여기에 표시됩니다.
-            
-            **📝 해설**: 상세한 해설 과정이 여기에 표시됩니다.
-            
-            **🔑 핵심 키워드**: 
-            - 키워드1
-            - 키워드2
-            - 키워드3
-            
-            **📈 토큰 사용량**: 사용된 토큰 수가 여기에 표시됩니다.
-            """)
 
-def display_quiz_result(result):
-    """퀴즈 분석 결과 표시"""
-    # 결과를 마크다운 형태로 표시
-    st.markdown("---")
-    
-    # 정답 섹션
-    st.markdown("### 🎯 정답")
-    if result['answer'] and result['answer'] != 'None':
-        st.success(f"**{result['answer']}**")
-    else:
-        st.warning("문제를 해결할 수 없습니다.")
-    
-    # st.markdown("---")
-    
-    # 해설 섹션
-    st.markdown("### 📝 해설")
-    if result['description'] and result['description'] != 'None':
-        st.markdown(result['description'])
-    else:
-        st.info("해설을 제공할 수 없습니다.")
-    
-    # st.markdown("---")
-    
-    # 키워드 섹션
-    st.markdown("### 🔑 핵심 키워드")
-    if result['keywords'] and result['keywords'] != 'None':
-        keywords_list = [kw.strip() for kw in result['keywords'].split(',')]
-        for keyword in keywords_list:
-            st.markdown(f"- **{keyword}**")
-    else:
-        st.info("키워드를 추출할 수 없습니다.")
-    
-    # st.markdown("---")
-    
-    # 사용량 섹션
-    st.markdown("### 📈 토큰 사용량")
-    st.metric("사용된 토큰", f"{result['usage_tokens']:,}")
-    
-    # st.markdown("---")
-    
-    # 새로운 분석을 위한 초기화 버튼
-    if st.button("🔄 새로운 분석 시작", use_container_width=True):
-        if "quiz_result" in st.session_state:
-            del st.session_state.quiz_result
-        st.rerun()
+        tab1, tab2 = st.tabs(["로그인 이력", "Agent 사용 이력"])
+        with tab1:
+            try:
+                df_login = read_sheet_by_df("tbl_mbr_login_incr")
+
+                df_name = read_sheet_by_df("tbl_mbr_req_incr")
+                df_name = df_name[['phn_no', 'name']].drop_duplicates()
+                df_login = df_login.merge(df_name, on='phn_no', how='left')
+
+                if not df_login.empty:
+                    # 컬럼명을 한글로 매핑 (필요시)
+                    column_mapping = {
+                        'date_partition': '날짜',
+                        'create_dt': '날짜/시간',
+                        'name':'이름',
+                        'phn_no': '연락처',
+                        'access_type': '권한 유형',
+                    }
+                    df_login_renamed = df_login[['date_partition', 'create_dt', 'name', 'phn_no', 'access_type']]
+                    df_login_renamed = df_login_renamed.rename(columns=column_mapping)
+                    st.dataframe(df_login_renamed, use_container_width=True)
+                else:
+                    st.info("로그인 이력 데이터가 없습니다.")
+            except Exception as e:
+                st.error(f"로그인 이력 데이터를 불러오는 중 오류가 발생했습니다: {e}")
+                st.code(f"오류 상세: {str(e)}")
+        with tab2:
+            try:
+                df_log = read_sheet_by_df("tbl_agent_usg_incr")
+                        
+                df_name = read_sheet_by_df("tbl_mbr_req_incr")
+                df_name = df_name[['phn_no', 'name']].drop_duplicates()
+                df_log = df_log.merge(df_name, on='phn_no', how='left')
+
+                if not df_log.empty:
+                    # 컬럼명을 한글로 매핑 (필요시)
+                    column_mapping = {
+                        'date_partition': '날짜',
+                        'create_dt': '날짜/시간',
+                        'name': '이름',
+                        'phn_no': '연락처',
+                        'access_type': '권한 유형',
+                        'subject': '과목',
+                        'agent_type': 'Agent 유형',
+                        'total_cost': '발생 비용'
+                    }
+                    df_log_renamed = df_log[['date_partition', 'create_dt', 'name', 'phn_no', 'access_type', 'subject', 'agent_type', 'total_cost']]
+                    df_log_renamed = df_log_renamed.rename(columns=column_mapping)
+                    st.dataframe(df_log_renamed, use_container_width=True)
+            except Exception as e:
+                st.error(f"사용 이력 데이터를 불러오는 중 오류가 발생했습니다: {e}")
+                st.code(f"오류 상세: {str(e)}")
 
 def main():
     # 세션 상태 초기화
