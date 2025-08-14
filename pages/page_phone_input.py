@@ -10,14 +10,14 @@ def page_phone_input():
     # 페이지 설정
     st.set_page_config(
         page_title=WEBAPP_NAME,
-        page_icon="🏕️",
+        page_icon="📝",
         layout="centered",
         initial_sidebar_state="collapsed"
     )
 
     # 헤더
-    st.title("🏕️ BASECAMP Agent")
-    st.subheader("📱 휴대폰 번호")
+    st.title("📝 BASECAMP Agent")
+    st.subheader("휴대폰 번호")
     
     # 관리자 모드 토글 버튼 - 우측 상단에 배치
     col1, col2 = st.columns([5, 1])
@@ -58,7 +58,11 @@ def page_phone_input():
                 
                 # SMS 발송
                 try:
-                    result = send_sms(phone_number, cert_code)
+                    sms_body = f"[BASECAMP Agent]\n인증번호: {cert_code}\n타인 유출로 인한 피해 주의"
+                    sms_type = "cert_code"
+                    create_dt = time.strftime("%Y%m%d %H:%M:%S", time.localtime())
+                    date_partition = create_dt.split(" ")[0]
+                    result = send_sms(date_partition, create_dt, phone_number, sms_type, sms_body)
                     if result.get('statusCode') == '202':
                         st.session_state.step = "verification"
                         time.sleep(0.1)
