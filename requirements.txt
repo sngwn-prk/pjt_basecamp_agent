@@ -6,11 +6,12 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 streamlit-option-menu
-langchain
-langchain-openai
-langchain-community
-langchain-core
+langchain==0.3.27
+langchain-openai==0.0.5
+langchain-community==0.0.10
+langchain-core==0.1.0
 python-dotenv
 requests
 Pillow
+
 
