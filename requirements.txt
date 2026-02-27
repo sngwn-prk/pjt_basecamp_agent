@@ -1,4 +1,3 @@
-git+https://github.com/googleapis/google-auth-library-python-httplib2
 git+https://github.com/streamlit/gsheets-connection
 streamlit
 pandas
@@ -13,4 +12,3 @@ langchain-core
 python-dotenv
 requests
 Pillow
-
